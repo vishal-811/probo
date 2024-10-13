@@ -4,30 +4,25 @@ import { OrderRequest } from '../types';
 
 const router = express.Router();
 
-
-router.get('/help',(req,res):any=>{
-      console.log(JSON.stringify(ORDERBOOK));
-
-    return res.json({msg:"haelty"});
-})
-
    //Create a User Endpoint.
-router.get('/user/create/:userId', (req: Request, res: Response):any => {
+router.get('/user/create/:userId', (req: Request, res: Response) => {
   const { userId } = req.params;
   if (INR_BALANCES[userId]) {
-    return res.status(400).json({ msg: "User already exists with this userId" });
-  }
+      res.status(400).json({ msg: "User already exists with this userId" });
+      return;
+    }
 
   // Create user entry in INR_BALANCES and STOCK_BALANCES
   INR_BALANCES[userId] = { balance: 0, locked: 0 };
   STOCK_BALANCES[userId] = {};
 
-  return res.status(201).json({ message: `User ${userId} created` });
+    res.status(201).json({ message: `User ${userId} created` });
+    return;
 });
 
  
 // Create a new Symbol Endpoint. 
-  router.get('/symbol/create/:stockSymbol',(req:Request,res:Response):any=>{
+  router.get('/symbol/create/:stockSymbol',(req:Request,res:Response)=>{
        const { stockSymbol } = req.params;
             
           //   we wanna to show this symbol to everyone thats why we iterate over the STOCK_BALANCES and show the yes no.
@@ -37,78 +32,91 @@ router.get('/user/create/:userId', (req: Request, res: Response):any => {
             no: { quantity: 0, locked: 0 },
         }
       } 
-        return res.status(201).json({message:`Symbol ${stockSymbol} created`});
+         res.status(201).json({message:`Symbol ${stockSymbol} created`});
+         return;
   });
 
 
   // create an onRamp inr enpoint
-   router.post('/onramp/inr',(req:Request,res:Response):any=>{
+   router.post('/onramp/inr',(req:Request,res:Response)=>{
        const { userId, amount} = req.body;
          if(!INR_BALANCES[userId]){
-            return res.json({message:"User doesnot exist with this userId"});
+             res.json({message:"User doesnot exist with this userId"});
+             return;
          }
          if(amount<=0){
-            return res.json({message:"please choose valid amount"});
+             res.json({message:"please choose valid amount"});
+             return;
          }
            INR_BALANCES[userId].balance =amount;
-         return res.status(200).json({message:`Onramped ${userId} with amount ${amount}`});
+           res.status(200).json({message:`Onramped ${userId} with amount ${amount}`});
+           return;
    })
 
   //  get a user inr balance 
-    router.get('/balance/inr/:userId',(req:Request,res:Response):any=>{
+    router.get('/balance/inr/:userId',(req:Request,res:Response)=>{
          const { userId }  = req.params;
             const userBalance = INR_BALANCES[userId]
          if(!userBalance){
-            return res.json({message:"No user exist with this userId"});
+             res.json({message:"No user exist with this userId"});
+             return;
          }
-           return res.json({message:`User Balance ${userBalance.balance}`});
+            res.json({message:`User Balance ${userBalance.balance}`});
+            return;
     })
 
     // Get a User Balances and locked ;
       router.get('/balances/inr',(req:Request,res:Response) : any=>{
           const { userId } = req.body;
             if(INR_BALANCES[userId]){
-               return res.json({message:"No user Exist with this UserID"});
+                res.json({message:"No user Exist with this UserID"});
+                return;
             }
 
             res.status(200).json(INR_BALANCES[userId]);
+            return;
       })
 
     // get a user Stock Balance 
-     router.get('/balance/stock/:userId',(req:Request,res:Response):any=>{
+     router.get('/balance/stock/:userId',(req:Request,res:Response): undefined=>{
           const { userId } = req.params;
             const stockBalances = STOCK_BALANCES[userId]
           if(!stockBalances){
-             return res.json({message:"The user with this Id does not hold any stock"});
+              res.json({message:"The user with this Id does not hold any stock"});
+              return;
           }
 
-              console.log(stockBalances);
-          return res.json({message:`your stock bal is ${JSON.stringify(stockBalances)}`});
+              
+             res.json({message:`your stock bal is ${JSON.stringify(stockBalances)}`});
      })
 
     //  get a Balances Stock
-       router.get('/balances/stock',(req,res) : any=>{
+       router.get('/balances/stock',(req,res) : undefined=>{
             const {userId, stockSymbol, stockType }  = req.body;
             if(!STOCK_BALANCES[userId]){
-                return res.json({message:"No user exist"})
+                 res.json({message:"No user exist"})
+                 return;
             }
             if(!STOCK_BALANCES[userId][stockSymbol]){
-                return res.json({message:"No Stock exist with this stock ID"});
+                 res.json({message:"No Stock exist with this stock ID"});
+                 return;
             }
             
-            return res.status(200).json(STOCK_BALANCES[userId][stockSymbol]);
+             res.status(200).json(STOCK_BALANCES[userId][stockSymbol]);
        })
 
 
      // Mint fresh Token endpoint
-       router.post('/trade/mint',(req:Request,res:Response):any=>{
+       router.post('/trade/mint',(req:Request,res:Response): undefined=>{
         const { userId, stockSymbol, quantity, price } = req.body;
         if (!userId || !stockSymbol || quantity == null || price == null) {
-            return res.status(400).json({ message: "Please provide userId, stockSymbol, quantity, and price." });
+             res.status(400).json({ message: "Please provide userId, stockSymbol, quantity, and price." });
+             return;
         }
             const availBal = INR_BALANCES[userId].balance;
             if(availBal<price){
-              return res.json({msg:"Insufficient Balance"})
+               res.json({msg:"Insufficient Balance"});
+               return;
             }
         // Ensure the user exists in STOCK_BALANCES
         if (!STOCK_BALANCES[userId]) {
@@ -144,71 +152,80 @@ router.get('/user/create/:userId', (req: Request, res: Response):any => {
 
 
        //  Order Sell Route
-     router.post('/order/sell', (req: Request<{}, {}, OrderRequest>, res: Response): any => {
+     router.post('/order/sell', (req: Request<{}, {}, OrderRequest>, res: Response): undefined => {
      const { userId, stockSymbol, quantity, price, stockType } = req.body;
       if (!userId || !stockSymbol || !quantity || !price || !stockType) {
-        return res.status(400).json({ message: "Please fill all the fields" });
+         res.status(400).json({ message: "Please fill all the fields" });
+         return;
       }
 
       if (stockType !== 'yes' && stockType !== 'no') {
-        return res.status(400).json({ message: "Invalid stock type" });
+         res.status(400).json({ message: "Invalid stock type" });
+         return;
        }
 
       // Check if the user exists in the stock balances
        const userStocks = STOCK_BALANCES[userId];
        if (!userStocks || !userStocks[stockSymbol]) {
-       return res.status(400).json({ message: "User doesn't hold the stock or invalid stock symbol" });
+        res.status(400).json({ message: "User doesn't hold the stock or invalid stock symbol" });
+        return;
       }
 
       const stockDetails = userStocks[stockSymbol][stockType];
       if (!stockDetails) {
-       return res.status(400).json({ message: `User doesn't hold any ${stockType} stocks of ${stockSymbol}` });
+        res.status(400).json({ message: `User doesn't hold any ${stockType} stocks of ${stockSymbol}` });
+        return;
       }
 
   // Check if the user has enough stock to sell
       if (stockDetails.quantity < quantity) {
-        return res.status(400).json({ message: "Not enough stock to sell" });
+         res.status(400).json({ message: "Not enough stock to sell" });
+         return
       }
 
   // Lock the quantity of stock being sold
          stockDetails.quantity -= quantity;
          stockDetails.locked += quantity;
 
-          return res.status(201).json({
+           res.status(201).json({
              message: `Sell order placed for ${quantity} '${stockType}' options of ${stockSymbol} at price ${price}`,
           });
    });
 
 
   //  Buy the stocks
-  router.post('/order/buy', (req: Request<{}, {}, OrderRequest>, res: Response) : any=> {
+  router.post('/order/buy', (req: Request<{}, {}, OrderRequest>, res: Response) : undefined=> {
     const { userId, stockSymbol, quantity, price, stockType } = req.body;
   
     // Validate input
     if (!userId || !stockSymbol || !quantity || !price || !stockType) {
-      return res.json({ message: "Please provide all fields" });
+       res.json({ message: "Please provide all fields" });
+       return;
     }
   
     const availStock = ORDERBOOK[stockSymbol];
     if (!availStock) {
-      return res.json({ msg: "This stock is not available to sell" });
+       res.json({ msg: "This stock is not available to sell" });
+       return;
     }
   
     const availStockType = availStock[stockType];
        console.log(availStockType);
     if (!availStockType || Object.keys(availStockType).length ===0) { // if there is no stock availble of the Selected type.
-      return res.json({ msg: "This type of stock is not available to sell" });
+       res.json({ msg: "This type of stock is not available to sell" });
+       return;
     }
   
     if (!availStockType[price] || availStockType[price].total < quantity) {
-      return res.json({ msg: "Not enough stock available at this price" });
+       res.json({ msg: "Not enough stock available at this price" });
+       return;
     }
   
     let remainingQuantity = quantity;
   
     // Iterate over the users in the order book for the given price
      for(const [user, userOrderAmount] of Object.entries(availStockType[price].orders)) {
-      if (remainingQuantity <= 0) return true;
+      if (remainingQuantity <= 0) break;
   
       const availableAmount = userOrderAmount;
       if (availableAmount <= remainingQuantity) {
@@ -248,19 +265,19 @@ router.get('/user/create/:userId', (req: Request, res: Response):any => {
   
     STOCK_BALANCES[userId][stockSymbol][stockType]!.quantity += (quantity - remainingQuantity);
   
-    return res.json({
+      res.json({
       message: `Successfully bought ${quantity - remainingQuantity} stocks of ${stockSymbol} at price ${price}`,
     });
   });
       
 
 // Fetching orderBook details
-      router.post('/orderbook',(req:Request,res:Response):any=>{
+      router.post('/orderbook',(req:Request,res:Response):undefined=>{
          const { stockSymbol } = req.body;
            if(!ORDERBOOK[stockSymbol]){
               ORDERBOOK[stockSymbol]={yes:{}, no:{}}
            }
 
-           return res.status(200).json(ORDERBOOK[stockSymbol]);
+            res.status(200).json(ORDERBOOK[stockSymbol]);
       })
 export default router;

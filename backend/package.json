@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
+    "start": "tsc-watch --onSuccess \"node dist/index.js\"",
     "build": "tsc -b",
     "test": "cross-env NODE_OPTIONS=--experimental-vm-modules npx jest"
   },
@@ -22,6 +23,7 @@
     "nodemon": "^3.1.7",
     "supertest": "^7.0.0",
     "ts-jest": "^29.2.5",
-    "ts-node": "^10.9.2"
+    "ts-node": "^10.9.2",
+    "tsc-watch": "^6.2.0"
   }
 }

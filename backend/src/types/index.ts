@@ -9,13 +9,15 @@ export interface UserBalance {
   }
 
 interface Orders {
-    [userId: string]: number;
+    [userId: string]: {quantity:number , orderType : "original" | "pseudo"};
   }
   
   interface PriceLevel {
     total: number;
     orders: Orders;
   }
+  
+
   
   export interface OrderSide {
     [price: string | number]: PriceLevel;
@@ -50,4 +52,15 @@ interface StockDetail {
     quantity: number;
     price: number;
     stockType: 'yes' | 'no';
+  }
+
+
+  export interface reverseCallType {
+    stockSymbol : string,
+    stockType : 'yes' | 'no',
+    price :number | string,
+    quantity? : number,
+    requiredQuantity?:number,
+    userId:string,
+    ORDERBOOK : Orderbook
   }

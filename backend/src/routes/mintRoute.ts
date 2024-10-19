@@ -6,7 +6,7 @@ const router = express.Router();
 router.post('/mint',(req:Request,res:Response): undefined=>{
     let { userId, stockSymbol, quantity, price } = req.body;
     console.log(userId,stockSymbol,quantity,price);
-    if (!userId || !stockSymbol || quantity == null || price == null) {
+    if (!userId || !stockSymbol || quantity <=0 || price <=0) {
         res.status(400).json({ message: "Please provide userId, stockSymbol, quantity, and price."});
         return;
     }

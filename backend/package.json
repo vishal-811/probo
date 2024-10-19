@@ -4,7 +4,7 @@
   "main": "index.js",
   "scripts": {
     "start": "tsc-watch --onSuccess \"node dist/index.js\"",
-    "build": "tsc -b",
+    "build": "tsc -b & node dist/index.js",
     "test": "cross-env NODE_OPTIONS=--experimental-vm-modules npx jest"
   },
   "keywords": [],

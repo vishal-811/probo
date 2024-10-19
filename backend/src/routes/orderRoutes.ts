@@ -1,4 +1,4 @@
-import express, { Request, Response} from 'express';
+import express, { json, Request, Response} from 'express';
 import { OrderRequest, reverseCallType } from '../types';
 import { INR_BALANCES,STOCK_BALANCES, ORDERBOOK } from '../data';
 import { client } from '../index';
@@ -70,8 +70,7 @@ router.post('/sell', (req: Request<{}, {}, OrderRequest>, res: Response): undefi
     //  Update the orderType also like it is original order
     ORDERBOOK[stockSymbol][stockType][price].orders[userId].orderType = "original";
         // push to redis queue.
-       client.RPUSH('stockSymbol',JSON.stringify(ORDERBOOK));
-       
+      client.RPUSH('stockSymbol',JSON.stringify({symbol: stockSymbol, orderbook: ORDERBOOK[stockSymbol]}));    
       res.status(200).json({
           message: "Sell order placed and pending",
       });
@@ -95,90 +94,100 @@ if (!userBalance) {
     return;
 }
   
-    // Check if the user has enough INR balance to place the order
+  // Check if the user has enough INR balance to place the order
 const requiredAmount = price * quantity;
 if (userBalance.balance < requiredAmount) {
     res.status(400).json({ message: "Insufficient balance" });
     return;
 }
-  
-    //Initialize stock in orderbook if not available
-   if(!ORDERBOOK[stockSymbol]){
-      ORDERBOOK[stockSymbol] = { yes: {}, no: {} };
-   } 
-   if(Object.keys(ORDERBOOK[stockSymbol][stockType]).length === 0){
-       ORDERBOOK[stockSymbol][stockType] = {[price] :{total:0 , orders:{}}};
-   }  
-   
-   if(!ORDERBOOK[stockSymbol][stockType][price]?.total){
-      ORDERBOOK[stockSymbol][stockType][price].total =0;
-   }
-   if(ORDERBOOK[stockSymbol][stockType][price]?.total < quantity && ORDERBOOK[stockSymbol][stockType][price].total === 0){
-    reverseCall({ stockSymbol, stockType, price, quantity, userId, ORDERBOOK});
-    res.json({msg:"Partial Order Placed"})
-    return;
+
+// Check the stock symbol exist in the order book or not 
+if(!ORDERBOOK[stockSymbol]){
+  ORDERBOOK[stockSymbol] = {"yes" :{}, "no":{}};
 }
-else if(ORDERBOOK[stockSymbol][stockType][price].total >= quantity || ((ORDERBOOK[stockSymbol][stockType][price].total < quantity 
- && ORDERBOOK[stockSymbol][stockType][price].total!=0 ))){
-  let requiredQuantity = quantity;
-  
-  for(const [ user, userSellQuantity] of Object.entries(ORDERBOOK[stockSymbol][stockType][price].orders)){
-    if(requiredQuantity == 0 || ORDERBOOK[stockSymbol][stockType][price].total == 0){
+// Check if the stock type exist in the order book
+if(Object.keys(ORDERBOOK[stockSymbol][stockType]).length === 0){
+  ORDERBOOK[stockSymbol][stockType] = {[price] :{total:0 , orders:{}}};
+}  
+//If the qvailable stock is equal to 0, create a reverse order
+   console.log(ORDERBOOK[stockSymbol][stockType][price]);
+if(ORDERBOOK[stockSymbol][stockType][price].total < quantity && ORDERBOOK[stockSymbol][stockType][price].total === 0){
+   reverseCall({ stockSymbol, stockType, price, quantity, userId, ORDERBOOK});
+   const amount = price * quantity;
+   INR_BALANCES[userId].balance -= amount;
+  //Push the updated order book to the queue
+  client.rPush("orderBook",JSON.stringify({symbol: stockSymbol, orderbook: ORDERBOOK[stockSymbol]}));
+  res.json({msg:"Partial order placed 1"});
+  return;
+}
+let requiredQuantity = quantity;
+// If the stock avialble is greater than the quantity in this case two option is there sell order is original or pseudo
+if(ORDERBOOK[stockSymbol][stockType][price].total != 0){
+   for( const [user, userSellQuantity] of Object.entries(ORDERBOOK[stockSymbol][stockType][price].orders)){
+
+      if(requiredQuantity <= 0 || ORDERBOOK[stockSymbol][stockType][price].total === 0){
         break;
-    }
-    if(userSellQuantity.quantity <= requiredQuantity){
-       requiredQuantity -= userSellQuantity.quantity;
-        
-        if(ORDERBOOK[stockSymbol][stockType][price].orders[user].orderType === 'original'){
-            // Unlock and update the user's Stock balance
-       if(STOCK_BALANCES[user]?.[stockSymbol]?.[stockType]){
-        STOCK_BALANCES[user][stockSymbol][stockType].locked = 0;
       }
+      if(userSellQuantity.orderType === "original"){
+         requiredQuantity -= userSellQuantity.quantity;
+         const amount = userSellQuantity.quantity * price;
+         if(STOCK_BALANCES[user][stockSymbol][stockType]){
+           STOCK_BALANCES[user][stockSymbol][stockType].locked -=userSellQuantity.quantity;
+         }
+         INR_BALANCES[user].balance += amount; //increase the balance of the user who sell the Stock.
+         ORDERBOOK[stockSymbol][stockType][price].total -= userSellQuantity.quantity;
+         delete  ORDERBOOK[stockSymbol][stockType][price].orders[user];
+         if( ORDERBOOK[stockSymbol][stockType][price].total === 0){
+            delete  ORDERBOOK[stockSymbol][stockType][price];
+         }
+      }
+      else{ //if the ordertype is pseudo.
+         requiredQuantity -= userSellQuantity.quantity;
+         const stockReverseType = stockType === 'yes' ? 'no' : 'yes'
+         const amount = quantity * price;
+        //  Unlock the user money and Give them reversetype stock
+            INR_BALANCES[user].locked -=amount;
+            if(STOCK_BALANCES[user][stockSymbol][stockReverseType]){
+               STOCK_BALANCES[user][stockSymbol][stockReverseType].quantity +=quantity;
+            }
+      }
+   }
+}
 
-      // Update the Balance of the user whose order is sold.
-     const totalAmount = price * userSellQuantity.quantity;
-     INR_BALANCES[user].balance += totalAmount;
-       // update Total stocks in the orderbook and Remove the user for the orderBook.
-       ORDERBOOK[stockSymbol][stockType][price].total -= userSellQuantity.quantity;
-       delete  ORDERBOOK[stockSymbol][stockType][price].orders[user];
-       if( ORDERBOOK[stockSymbol][stockType][price].total === 0){
-         delete  ORDERBOOK[stockSymbol][stockType][price];
-       }
-     }else{ // if order type is pseudo, than give the token to both.
-         const amount = quantity * price
-         INR_BALANCES[user].locked -=amount;
-          let reversetype = stockType==="yes" ? "yes" : "no"; 
-          if( STOCK_BALANCES[user]){
-            //  STOCK_BALANCES[user][stockSymbol][reversetype].quantity += quantity;
-          }
-     } 
-        
-     }
-     else{
-          ORDERBOOK[stockSymbol][stockType][price].orders[user].quantity -= requiredQuantity;
-                  // Update the stock balance locked quantity
-          if(STOCK_BALANCES[user]?.[stockSymbol]?.[stockType]){
-              STOCK_BALANCES[user][stockSymbol][stockType].locked -= requiredQuantity;
-              const totalAmount = price * requiredQuantity;
-              INR_BALANCES[user].balance += totalAmount;
-          }
-                  requiredQuantity =0;
-    }
+if(requiredQuantity>0){
+  //Deduct the money for the fulfilled stock qunatity also deduct their balance.
+  const FullFilledQunatity = quantity - requiredQuantity;
+  const amount = FullFilledQunatity * price;
+  INR_BALANCES[userId].balance -= amount;
+  if( STOCK_BALANCES[userId][stockSymbol][stockType]){
+    STOCK_BALANCES[userId][stockSymbol][stockType].quantity +=FullFilledQunatity;
   }
-
-    if(requiredQuantity!=0){  //means our half order placed and for half we have to make a reverse call.
-       reverseCall({stockSymbol,stockType,requiredQuantity,price, userId,ORDERBOOK})
-          // Put the updated Orderbook in a queue
-       client.RPUSH('stockSymbol',JSON.stringify(ORDERBOOK));
-        res.json({msg:"Partial Order Placed"});
-           return;
-    }
-    client.RPUSH('stockSymbol',JSON.stringify(ORDERBOOK));
-    res.json({msg:"Order placed"});
- }
+  reverseCall({stockSymbol, stockType, userId, requiredQuantity,price,ORDERBOOK});
+  // Send the orderbook to the Redis queue
+  client.RPUSH("orderBook",JSON.stringify({symbol: stockSymbol, orderbook: ORDERBOOK[stockSymbol]}));
+  res.json({msg:"Partial Order Placed"});
+  return;
+}
+else{ //if the user order is fulfilled, requiredQuantity equals to 0.
+  // Deduct the user balance who bought the Stocks and increase their stocks
+  const amount = quantity * price;
+  INR_BALANCES[userId].balance -= amount;
+  if(!STOCK_BALANCES[userId]){
+    STOCK_BALANCES[userId] = {[stockSymbol]:{}};
+  }
+  if(!STOCK_BALANCES[userId][stockSymbol]){
+     STOCK_BALANCES[userId][stockSymbol] = {yes:{quantity: 0, locked:0}, no:{quantity:0, locked: 0}};
+  }
+  if(STOCK_BALANCES[userId][stockSymbol][stockType]){
+     STOCK_BALANCES[userId][stockSymbol][stockType].quantity += quantity;
+  }
+  client.rPush("orderBook", JSON.stringify({symbol: stockSymbol, orderbook: ORDERBOOK[stockSymbol]}));
+  res.json({msg:"order fulfilled"})
+}
 });
   
-  
+ 
+
   // Function to  make a reverse call
     function reverseCall({ stockSymbol, stockType, price, quantity, userId, requiredQuantity, ORDERBOOK }: reverseCallType) {
     const newStocks = quantity ? quantity : requiredQuantity;

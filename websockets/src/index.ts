@@ -2,55 +2,103 @@ import WebSocket, { WebSocketServer } from 'ws';
 import http from 'http';
 import { createClient } from 'redis';
 
-const server = http.createServer(function(requset,response){
-     response.end("Hi there");
-})
-
-const wss = new WebSocketServer({server}); //create a new websocket instance at same port where our server is running.
-
-const client = createClient();
-wss.on('connection',function connection(ws){
-    ws.on('error',console.error);
-        // User send a message, which Stock they want to subscribe, we put the userId in the same stock room.
-        ws.on('message',function message(data,isBinary){  // if client send message, than call message callback function.
-            console.log(data);
-        })
-        
+const server = http.createServer(function(request, response) {
+    response.end("Hi there");
 });
 
-async function sendorderbookData(orderbook : string) {
-    // Send the updated orderbook to the client.
-   wss.clients.forEach(function each(client){
-      if(client.readyState === WebSocket.OPEN){
-        client.send(orderbook); // send orderbook as a string.
-      }
-   })
+const wss = new WebSocketServer({ server });
+
+const subscriptions: {
+    symbol: string,
+    subscribers: WebSocket[]
+}[] = [];
+
+function findSubScription(symbol: string) {
+    console.log(subscriptions.find(data => data.symbol === symbol));
+    return subscriptions.find(data => data.symbol === symbol);
 }
 
-async function popFromQueue(){
-   while(true){ //polling the redis queue.
-    const orderbook = await client.blPop('stockSymbol',0);
-    //send orderbook data to all the clients who are on that event/ room.
-    if(orderbook){
-        await sendorderbookData(orderbook.element);
+function handleWebsocketMessage(message: any, ws: WebSocket) {
+    let data;
+    try {
+        data = JSON.parse(message.toString()); // Parse the incoming message
+    } catch (error) {
+        console.error("Error parsing message:", error);
+        return; // Exit if parsing fails
     }
-   }
+    
+    const type = data.type;
+    const symbol = data.symbol;
+
+    if (type === 'subscribe') {
+        let subscription = findSubScription(symbol);
+        if (!subscription) {
+            subscription = { symbol: symbol, subscribers: [] }; // Create a new subscription
+            subscriptions.push(subscription); // Add to subscriptions array
+        }
+        subscription.subscribers.push(ws); // Add the WebSocket connection to subscribers
+
+    } else if (type === 'unsubscribe') {
+        let subscription = findSubScription(symbol);
+        if (!subscription) return;
+        subscription.subscribers = subscription.subscribers.filter(subscriber => subscriber !== ws); // Remove subscriber
+    }
 }
 
-async function startServer(){
-   try {
-    await client.connect();
-    console.log("Connected to redis");
+function handleCloseEvent(ws : WebSocket){
+    // Iterate over all the objects and delete the user where the user have subscribed
+    subscriptions.forEach(subscription => {
+        subscription.subscribers.filter(userId =>{
+            userId != ws
+        })
+    })
+}
+const client = createClient();
+wss.on('connection', (ws) => {
+    ws.on('error', console.error);
+    ws.on('message', (message) => {
+        handleWebsocketMessage(message, ws);
+    });
 
-    // pop data from a redis queue
-    popFromQueue();
-   } catch (error) {
-      console.error(error);
-   }
- 
-  server.listen(3001,()=>{
-     console.log("Server is running on port 3001"); //websocket server is listening on port 3001.
-  })
+    ws.on('close',()=>handleCloseEvent(ws))
+});
+
+async function sendOrderbookData(symbol: string, orderbook: string) {
+    const subscription = findSubScription(symbol); 
+    if (subscription) {
+        // Send the orderbook data to all subscribers of that symbol
+        subscription.subscribers.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(JSON.stringify(orderbook)); // Send orderbook as a string
+            }
+        });
+    }
+}
+
+async function popFromQueue() {
+    while (true) { 
+        const orderbook = await client.blPop('stockSymbol', 0);
+        if (orderbook) {
+           const parsedData = JSON.parse(orderbook.element);
+           const symbol = parsedData.symbol;
+           const data = parsedData.orderbook;
+           await sendOrderbookData(symbol, data); // Pass symbol and orderbook data
+        }
+    }
+}
+
+async function startServer() {
+    try {
+        await client.connect();
+        console.log("Connected to redis");
+        popFromQueue(); // Start polling the Redis queue
+    } catch (error) {
+        console.error(error);
+    }
+
+    server.listen(3001, () => {
+        console.log("Server is running on port 3001"); // WebSocket server is listening on port 3001.
+    });
 }
 
 startServer();
